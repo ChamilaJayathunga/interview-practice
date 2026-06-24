@@ -853,7 +853,7 @@ const questions = [
     answer: "はい、たいりゃくには とても じしんが あります。\nまかせた しごとを まいにち げんきに はたらく ことが できます。"
   },
   {
-    file: "35.1.m4a",
+    file: "35. 1.m4a",
     label: "35.1",
     question: "あなたは どんな ひとだと おもいますか。",
     answer: "わたしは こころが やさしくて お重いやりの ある ひとだと おもいます。"
@@ -980,9 +980,24 @@ const questions = [
   }
 ];
 
+let jaVoice = null;
+if (window.speechSynthesis) {
+  function loadJaVoice() {
+    const voices = speechSynthesis.getVoices();
+    jaVoice = voices.find(v => v.lang.startsWith('ja')) || null;
+    if (!jaVoice) {
+      jaVoice = voices.find(v => v.lang.startsWith('ja-JP') || v.lang.startsWith('jap')) || null;
+    }
+  }
+  loadJaVoice();
+  speechSynthesis.onvoiceschanged = loadJaVoice;
+  setTimeout(loadJaVoice, 1000);
+}
+
 const container = document.getElementById('questions');
 let currentAudio = null;
 let currentBtn = null;
+let currentTTS = null;
 
 questions.forEach((q) => {
   const card = document.createElement('div');
@@ -1071,6 +1086,11 @@ questions.forEach((q) => {
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
 
+    if (currentTTS) {
+      window.speechSynthesis.cancel();
+      currentTTS = null;
+      if (currentBtn) currentBtn.classList.remove('playing');
+    }
     if (currentAudio && currentAudio !== audio) {
       currentAudio.pause();
       currentAudio.currentTime = 0;
@@ -1078,10 +1098,19 @@ questions.forEach((q) => {
     }
 
     if (audio.paused) {
-      audio.play().catch(() => {});
-      btn.classList.add('playing');
-      currentAudio = audio;
-      currentBtn = btn;
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          btn.classList.add('playing');
+          currentAudio = audio;
+          currentBtn = btn;
+        }).catch(() => {
+          btn.classList.add('playing');
+          currentTTS = true;
+          currentBtn = btn;
+          speakTTSCard(q.question, btn);
+        });
+      }
     } else {
       audio.pause();
       audio.currentTime = 0;
@@ -1095,6 +1124,10 @@ questions.forEach((q) => {
     btn.classList.remove('playing');
     if (currentAudio === audio) currentAudio = null;
     if (currentBtn === btn) currentBtn = null;
+  });
+
+  audio.addEventListener('error', () => {
+    audio.pause = () => {};
   });
 
   let open = false;
@@ -1217,19 +1250,23 @@ let practiceIndex = 0;
 let isSpeaking = false;
 let isAnswerSpeaking = false;
 let practiceSpeed = 1;
-let jaVoice = null;
 
-if (window.speechSynthesis) {
-  function loadJaVoice() {
-    const voices = speechSynthesis.getVoices();
-    jaVoice = voices.find(v => v.lang.startsWith('ja')) || null;
-    if (!jaVoice) {
-      jaVoice = voices.find(v => v.lang.startsWith('ja-JP') || v.lang.startsWith('jap')) || null;
-    }
-  }
-  loadJaVoice();
-  speechSynthesis.onvoiceschanged = loadJaVoice;
-  setTimeout(loadJaVoice, 1000);
+function speakTTSCard(text, btn) {
+  if (!window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    if (jaVoice) utterance.voice = jaVoice;
+    utterance.onend = () => {
+      btn.classList.remove('playing');
+      if (currentTTS) { currentTTS = null; currentBtn = null; }
+    };
+    window.speechSynthesis.speak(utterance);
+    if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+  } catch (e) {}
 }
 
 function shuffle(arr) {
